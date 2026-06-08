@@ -59,9 +59,8 @@ void limpiar_matriz() {
     }
 }
 
-// ---------------------------------------------------------
+
 // LÓGICA DE VISUALIZACIÓN Y TEXTOS
-// ---------------------------------------------------------
 
 // Muestra letras estáticas (Para L1, L2, L3 como permite la rúbrica)
 void mostrar_simbolo(uint8_t nivel) {
@@ -98,9 +97,9 @@ void delay_variable(uint8_t ms) {
     }
 }
 
-// ---------------------------------------------------------
+
 // LÓGICA DEL JUEGO
-// ---------------------------------------------------------
+
 
 void configurar_nivel(uint8_t n) {
     ball_x = 3; ball_y = 3;
