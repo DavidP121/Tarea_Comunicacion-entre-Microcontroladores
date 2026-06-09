@@ -12,7 +12,7 @@
 #define DERROTA 5
 
 volatile uint8_t buffer_pantalla[8] = {0};
-
+bool juego_en_pausa = true; // La pelota no se mueve al iniciar
 // Variables Globales del Juego
 uint8_t estado_actual = INICIO;
 uint8_t ball_x = 3, ball_y = 4; // La pelota ahora empieza más abajo
@@ -33,11 +33,11 @@ uint8_t estado_anterior_der = 0;
 
 // Símbolos para las pantallas de estado
 const uint8_t SIMBOLO_PLAY[8]  = {0x00, 0x00, 0x7E, 0x3C, 0x18, 0x00, 0x00, 0x00};
-const uint8_t SIMBOLO_1[8]     = {0x00, 0x00, 0x04, 0x02, 0xFF, 0x00, 0x00, 0x00};
-const uint8_t SIMBOLO_2[8]     = {0x00, 0x00, 0x42, 0x62, 0x52, 0x4A, 0x46, 0x00};
-const uint8_t SIMBOLO_3[8]     = {0x00, 0x00, 0x41, 0x91, 0x91, 0x6E, 0x00, 0x00};
+const uint8_t SIMBOLO_1[8]  = {0x00, 0x44, 0x46, 0x7E, 0x7E, 0x40, 0x40, 0x00};
+const uint8_t SIMBOLO_2[8]     = {0x00, 0xC4, 0xE6, 0xF6, 0xDE, 0xCC, 0x00, 0x00};
+const uint8_t SIMBOLO_3[8]     = {0x00, 0x5A, 0x5A, 0x5A, 0x5A, 0x7E, 0x7E, 0x00};
 const uint8_t SIMBOLO_X[8]     = {0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81};
-const uint8_t SIMBOLO_COPA[8]  = {0x0C, 0x12, 0x3E, 0x08, 0x08, 0x3E, 0x12, 0x0C};
+const uint8_t SIMBOLO_COPA[8]     = {0x06, 0x89, 0xCE, 0xFE, 0xFE, 0xCE, 0x89, 0x06};
 
 // Mensaje deslizante: "INTENTALO DE NUEVO" a pantalla completa
 const uint8_t MSG_DERROTA[] = {
@@ -111,6 +111,13 @@ void actualizar_pantalla_juego() {
 }
 
 void configurar_nivel(uint8_t n) {
+    estado_actual = n;
+    paddle_x = 2; // Centrada: (8 ancho matriz - 3 ancho barra) / 2 = 2.5, usamos 2.
+    ball_x = 3; 
+    ball_y = 6; // Pelota sobre la barra
+    juego_en_pausa = true; // El juego empieza en espera
+    dir_x = 0; dir_y = -1; // Dirección inicial neutra
+
     ball_x = 3; ball_y = 5; // Inicia cerca de la barra
     dir_x = 1; dir_y = -1;
     estado_actual = n;
@@ -130,14 +137,14 @@ void configurar_nivel(uint8_t n) {
         bloques_restantes = 6;
         mostrar_simbolo(SIMBOLO_1);
     } else if (n == NIVEL_2) {
-        limite_pelota = 20; // Rápido
+        limite_pelota = 40; // Rápido
         bloques[0] = 0b11111111; // Fila 0: 8 bloques
         bloques[1] = 0b01111110; // Fila 1: 6 bloques
         bloques[2] = 0b00000000;
         bloques_restantes = 14;
         mostrar_simbolo(SIMBOLO_2);
     } else if (n == NIVEL_3) {
-        limite_pelota = 8; // Velocidad extrema
+        limite_pelota = 40; // Velocidad extrema
         bloques[0] = 0b11111111; // Fila 0: 8 bloques
         bloques[1] = 0b10000001; // Fila 1: 2 bloques esquineros
         bloques[2] = 0b11111111; // Fila 2: 8 bloques
@@ -152,19 +159,32 @@ void configurar_nivel(uint8_t n) {
 void leer_botones() {
     uint8_t estado_actual_izq = PINC & (1 << PC0);
     uint8_t estado_actual_der = PINC & (1 << PC5);
+    uint8_t boton_lanzar = PINC & (1 << PC1);
 
     if (estado_actual_izq && !estado_anterior_izq) {
-        if (paddle_x > 0) paddle_x--;
+        if (paddle_x > 0) {
+            paddle_x--;
+            if (juego_en_pausa) ball_x = paddle_x + 1; // La pelota sigue a la barra
+        }
     }
     
     if (estado_actual_der && !estado_anterior_der) {
-        if (paddle_x < (8 - paddle_width)) paddle_x++;
+        if (paddle_x < (8 - paddle_width)) {
+            paddle_x++;
+            if (juego_en_pausa) ball_x = paddle_x + 1; // La pelota sigue a la barra
+        }
+    }
+
+    // Lanzar la pelota
+    if (boton_lanzar && juego_en_pausa) {
+        juego_en_pausa = false;
+        dir_x = 0; // Sale recta
+        dir_y = -1;
     }
 
     estado_anterior_izq = estado_actual_izq;
     estado_anterior_der = estado_actual_der;
 }
-
 void actualizar_pelota() {
     ball_x += dir_x;
     ball_y += dir_y;
@@ -245,17 +265,16 @@ int main(void) {
             }
         } 
         else if (estado_actual >= NIVEL_1 && estado_actual <= NIVEL_3) {
-            tick_pelota++;
-
-            leer_botones();
-            actualizar_pantalla_juego();
-
-            if (tick_pelota >= limite_pelota) {
-                actualizar_pelota();
-                actualizar_pantalla_juego();
-                tick_pelota = 0;
-            }
-        } 
+           leer_botones();
+           if (!juego_en_pausa) { // Solo mover si no está en pausa
+              tick_pelota++;
+              if (tick_pelota >= limite_pelota) {
+                  actualizar_pelota();
+                  tick_pelota = 0;
+        }
+    }
+    actualizar_pantalla_juego();
+}
         else if (estado_actual == VICTORIA) {
             mostrar_simbolo(SIMBOLO_COPA);
             if (PINC & (1 << PC1)) { 
