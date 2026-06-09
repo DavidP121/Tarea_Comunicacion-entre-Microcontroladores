@@ -1,12 +1,7 @@
 #define F_CPU 16000000UL
 #include <avr/io.h>
 #include <util/delay.h>
-#include <avr/pgmspace.h>
-
-// Definiciones de pines SPI para el MAX7219
-#define CS_PIN   PB2
-#define MOSI_PIN PB3
-#define SCK_PIN  PB5
+#include <stdbool.h>
 
 // Estados del juego
 #define INICIO 0
@@ -16,190 +11,271 @@
 #define VICTORIA 4
 #define DERROTA 5
 
+volatile uint8_t buffer_pantalla[8] = {0};
+
 // Variables Globales del Juego
 uint8_t estado_actual = INICIO;
-uint8_t ball_x = 3, ball_y = 3;
+uint8_t ball_x = 3, ball_y = 4; // La pelota ahora empieza más abajo
 int8_t dir_x = 1, dir_y = -1;
-uint8_t paddle_x = 2; // Posición inicial izquierda de la barra
-uint8_t paddle_width = 3; // Nivel 1: 3 puntos
-uint8_t velocidad = 150; // Delay base para velocidad
-uint8_t rebotes = 0; // Para contar cuando pasamos de nivel
+uint8_t paddle_x = 2; 
+uint8_t paddle_width = 3; 
 
-// ---------------------------------------------------------
-// FUNCIONES SPI Y MAX7219
-// ---------------------------------------------------------
-void SPI_init() {
-    // Configurar MOSI, SCK y CS como salidas
-    DDRB |= (1 << MOSI_PIN) | (1 << SCK_PIN) | (1 << CS_PIN);
-    // Habilitar SPI, Modo Master, prescaler fosc/16
-    SPCR = (1 << SPE) | (1 << MSTR) | (1 << SPR0);
-}
+// --- NUEVAS VARIABLES PARA LOS BLOQUES ---
+uint8_t bloques[3] = {0, 0, 0}; // Representan las filas 0, 1 y 2 de la matriz
+uint8_t bloques_restantes = 0;  // Contador para saber cuándo pasar de nivel
 
-void MAX7219_escribir(uint8_t direccion, uint8_t datos) {
-    PORTB &= ~(1 << CS_PIN); // CS en BAJO
-    SPDR = direccion;        // Enviar dirección
-    while (!(SPSR & (1 << SPIF)));
-    SPDR = datos;            // Enviar datos
-    while (!(SPSR & (1 << SPIF)));
-    PORTB |= (1 << CS_PIN);  // CS en ALTO
-}
+// Variables para controlar la velocidad de la pelota
+uint16_t limite_pelota = 50; 
 
-void MAX7219_init() {
-    SPI_init();
-    MAX7219_escribir(0x09, 0x00); // Modo decodificación: Ninguno
-    MAX7219_escribir(0x0A, 0x08); // Brillo (0x00 a 0x0F)
-    MAX7219_escribir(0x0B, 0x07); // Scan Limit: todas las filas (0-7)
-    MAX7219_escribir(0x0C, 0x01); // Modo normal (salir de shutdown)
-    MAX7219_escribir(0x0F, 0x00); // Test de display apagado
+// Variables para la "Memoria" de los botones (Evita el efecto metralleta)
+uint8_t estado_anterior_izq = 0;
+uint8_t estado_anterior_der = 0;
+
+// Símbolos para las pantallas de estado
+const uint8_t SIMBOLO_PLAY[8]  = {0x00, 0x00, 0x7E, 0x3C, 0x18, 0x00, 0x00, 0x00};
+const uint8_t SIMBOLO_1[8]     = {0x00, 0x00, 0x04, 0x02, 0xFF, 0x00, 0x00, 0x00};
+const uint8_t SIMBOLO_2[8]     = {0x00, 0x00, 0x42, 0x62, 0x52, 0x4A, 0x46, 0x00};
+const uint8_t SIMBOLO_3[8]     = {0x00, 0x00, 0x41, 0x91, 0x91, 0x6E, 0x00, 0x00};
+const uint8_t SIMBOLO_X[8]     = {0x81, 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x81};
+const uint8_t SIMBOLO_COPA[8]  = {0x0C, 0x12, 0x3E, 0x08, 0x08, 0x3E, 0x12, 0x0C};
+
+// Mensaje deslizante: "INTENTALO DE NUEVO" a pantalla completa
+const uint8_t MSG_DERROTA[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x82, 0xFE, 0x82, 0x00,                         // I
+    0xFE, 0x08, 0x10, 0x20, 0xFE, 0x00,             // N
+    0x02, 0xFE, 0x02, 0x00,                         // T
+    0xFE, 0x92, 0x92, 0x82, 0x00,                   // E
+    0xFE, 0x08, 0x10, 0x20, 0xFE, 0x00,             // N
+    0x02, 0xFE, 0x02, 0x00,                         // T
+    0xFC, 0x12, 0x12, 0xFC, 0x00,                   // A
+    0xFE, 0x80, 0x80, 0x80, 0x00,                   // L
+    0x7C, 0x82, 0x82, 0x7C, 0x00,                   // O
+    0x00, 0x00,                                     // Espacio
+    0xFE, 0x82, 0x82, 0x7C, 0x00,                   // D
+    0xFE, 0x92, 0x92, 0x82, 0x00,                   // E
+    0x00, 0x00,                                     // Espacio
+    0xFE, 0x08, 0x10, 0x20, 0xFE, 0x00,             // N
+    0x7E, 0x80, 0x80, 0x7E, 0x00,                   // U
+    0xFE, 0x92, 0x92, 0x82, 0x00,                   // E
+    0x3E, 0x40, 0x80, 0x40, 0x3E, 0x00,             // V
+    0x7C, 0x82, 0x82, 0x7C, 0x00,                   // O
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  
+};
+#define LONGITUD_MSG (sizeof(MSG_DERROTA))
+
+void inicializar_hardware() {
+    DDRD = 0xFF; 
+    DDRB = 0xFF; 
+    DDRC &= ~((1 << PC0) | (1 << PC1) | (1 << PC5)); 
+    PORTC &= ~((1 << PC0) | (1 << PC1) | (1 << PC5)); 
 }
 
 void limpiar_matriz() {
-    for (uint8_t i = 1; i <= 8; i++) {
-        MAX7219_escribir(i, 0x00);
+    for (uint8_t i = 0; i < 8; i++) buffer_pantalla[i] = 0;
+}
+
+void mostrar_simbolo(const uint8_t* simbolo) {
+    for(uint8_t i = 0; i < 8; i++) buffer_pantalla[i] = simbolo[i];
+}
+
+void renderizar_un_frame() {
+    for (uint8_t columna = 0; columna < 8; columna++) {
+        PORTB = 0xFF; 
+        PORTD = 0x00; 
+        PORTD = buffer_pantalla[columna]; 
+        PORTB = ~(1 << columna);          
+        _delay_ms(0.1); 
     }
 }
 
-
-// LÓGICA DE VISUALIZACIÓN Y TEXTOS
-
-// Muestra letras estáticas (Para L1, L2, L3 como permite la rúbrica)
-void mostrar_simbolo(uint8_t nivel) {
-    limpiar_matriz();
-    // Ejemplo de 'L' simplificada en la izquierda y el número a la derecha
-    if(nivel == 1){
-        MAX7219_escribir(2, 0b01000010); // L y 1
-        MAX7219_escribir(3, 0b01000110);
-        MAX7219_escribir(4, 0b01000010);
-        MAX7219_escribir(5, 0b01110111);
-    } 
-    // Aquí puedes expandir para L2 y L3, o crear la función de scroll de texto
-    _delay_ms(1500); 
-}
-
-// Centralizamos el dibujado por si hay que rotar la matriz
-void actualizar_matriz() {
+void actualizar_pantalla_juego() {
     limpiar_matriz();
     
-    // Dibujar Barra en la fila 8 (índice 7 para nosotros)
-    uint8_t barra_bits = 0;
+    // 1. Dibujar los bloques de las 3 primeras filas
+    for (uint8_t y = 0; y < 3; y++) {
+        for (uint8_t x = 0; x < 8; x++) {
+            if (bloques[y] & (1 << x)) { // Si el bit está en 1, el bloque existe
+                buffer_pantalla[x] |= (1 << y);
+            }
+        }
+    }
+    
+    // 2. Dibujar la barra
     for(uint8_t i = 0; i < paddle_width; i++) {
-        barra_bits |= (1 << (7 - (paddle_x + i))); 
+        buffer_pantalla[paddle_x + i] |= (1 << 7);
     }
-    MAX7219_escribir(8, barra_bits); // Fila 8 es el piso
     
-    // Dibujar Pelota
-    MAX7219_escribir(ball_y + 1, (1 << (7 - ball_x)));
+    // 3. Dibujar la pelota
+    buffer_pantalla[ball_x] |= (1 << ball_y);
 }
-
-void delay_variable(uint8_t ms) {
-    for(uint8_t i = 0; i < ms; i++) {
-        _delay_ms(1);
-    }
-}
-
-
-// LÓGICA DEL JUEGO
-
 
 void configurar_nivel(uint8_t n) {
-    ball_x = 3; ball_y = 3;
+    ball_x = 3; ball_y = 5; // Inicia cerca de la barra
     dir_x = 1; dir_y = -1;
-    rebotes = 0;
     estado_actual = n;
     
+    estado_anterior_izq = PINC & (1 << PC0);
+    estado_anterior_der = PINC & (1 << PC5);
+    
+    // La barra ahora siempre mide 3 para que el tiro recto funcione.
+    // La dificultad ahora se basa puramente en la velocidad extrema.
+    paddle_width = 3; 
+    
     if (n == NIVEL_1) {
-        paddle_width = 3; velocidad = 120;
+        limite_pelota = 40; // Lento
+        bloques[0] = 0b00000000;
+        bloques[1] = 0b01111110; // Fila 1: 6 bloques
+        bloques[2] = 0b00000000;
+        bloques_restantes = 6;
+        mostrar_simbolo(SIMBOLO_1);
     } else if (n == NIVEL_2) {
-        paddle_width = 2; velocidad = 80;
+        limite_pelota = 20; // Rápido
+        bloques[0] = 0b11111111; // Fila 0: 8 bloques
+        bloques[1] = 0b01111110; // Fila 1: 6 bloques
+        bloques[2] = 0b00000000;
+        bloques_restantes = 14;
+        mostrar_simbolo(SIMBOLO_2);
     } else if (n == NIVEL_3) {
-        paddle_width = 1; velocidad = 50;
+        limite_pelota = 8; // Velocidad extrema
+        bloques[0] = 0b11111111; // Fila 0: 8 bloques
+        bloques[1] = 0b10000001; // Fila 1: 2 bloques esquineros
+        bloques[2] = 0b11111111; // Fila 2: 8 bloques
+        bloques_restantes = 18;
+        mostrar_simbolo(SIMBOLO_3);
     }
     
-    mostrar_simbolo(n); // Muestra L1, L2, L3 antes de iniciar
-    // AQUÍ IRÁ EL CÓDIGO UART PARA ENVIAR SEÑAL DE SONIDO AL PIC
+    for(uint16_t i = 0; i < 200; i++) renderizar_un_frame();
+    actualizar_pantalla_juego();
 }
 
 void leer_botones() {
-    // Mover Izquierda (PD3)
-    if (!(PIND & (1 << PD3))) {
+    uint8_t estado_actual_izq = PINC & (1 << PC0);
+    uint8_t estado_actual_der = PINC & (1 << PC5);
+
+    if (estado_actual_izq && !estado_anterior_izq) {
         if (paddle_x > 0) paddle_x--;
     }
-    // Mover Derecha (PD4)
-    if (!(PIND & (1 << PD4))) {
+    
+    if (estado_actual_der && !estado_anterior_der) {
         if (paddle_x < (8 - paddle_width)) paddle_x++;
     }
+
+    estado_anterior_izq = estado_actual_izq;
+    estado_anterior_der = estado_actual_der;
 }
 
 void actualizar_pelota() {
-    // Mover pelota
     ball_x += dir_x;
     ball_y += dir_y;
 
-    // Colisión con paredes laterales (X)
-    if (ball_x == 0 || ball_x == 7) {
-        dir_x = -dir_x; // Rebote
-    }
+    // 1. Rebote en paredes laterales (Protección de bordes)
+    if (ball_x <= 0) { ball_x = 0; dir_x = 1; }
+    if (ball_x >= 7) { ball_x = 7; dir_x = -1; }
 
-    // Colisión con el techo (Y = 0)
-    if (ball_y == 0) {
-        dir_y = -dir_y; // Rebote hacia abajo
-    }
-
-    // Colisión con la barra o pérdida (Y = 6 y Y = 7)
-    if (ball_y == 6 && dir_y > 0) {
-        // Verificar si la pelota está en la misma columna que la barra
-        if (ball_x >= paddle_x && ball_x < (paddle_x + paddle_width)) {
-            dir_y = -dir_y; // Rebote exitoso
-            rebotes++;
+    // 2. Colisión con los bloques
+    bool impacto = false;
+    if (ball_y <= 2) {
+        if (bloques[ball_y] & (1 << ball_x)) { 
+            bloques[ball_y] &= ~(1 << ball_x); // Destruye el bloque
+            bloques_restantes--;
+            dir_y = 1; // Rebota hacia abajo
+            impacto = true;
             
-            // Lógica de progreso de nivel (ejemplo: 5 rebotes para pasar de nivel)
-            if (rebotes >= 5) {
+            // Revisa si ya ganó el nivel
+            if (bloques_restantes == 0) {
                 if (estado_actual == NIVEL_1) configurar_nivel(NIVEL_2);
                 else if (estado_actual == NIVEL_2) configurar_nivel(NIVEL_3);
                 else if (estado_actual == NIVEL_3) estado_actual = VICTORIA;
+                return; 
             }
-            // AQUÍ SE ENVIARÁ SEÑAL AL PIC DE "SONIDO REBOTE"
         }
-    } else if (ball_y >= 7) {
-        // La pelota tocó fondo y la barra no estaba ahí
+    }
+
+    // 3. Rebote en el techo (Si no golpeó un bloque)
+    if (ball_y == 0 && !impacto) {
+        dir_y = 1;
+    }
+
+    // 4. Rebote con la barra (AQUÍ ESTÁ LA MAGIA)
+    if (ball_y == 6 && dir_y > 0) {
+        if (ball_x >= paddle_x && ball_x < (paddle_x + paddle_width)) {
+            dir_y = -1; // Siempre rebota hacia arriba
+            
+            // Calcula dónde pegó la pelota para romper el ciclo diagonal
+            if (ball_x == paddle_x) {
+                dir_x = -1; // Pega a la izquierda -> Sale a la izquierda
+            } else if (ball_x == paddle_x + 2) {
+                dir_x = 1;  // Pega a la derecha -> Sale a la derecha
+            } else {
+                dir_x = 0;  // Pega en el centro -> ¡SALE RECTA HACIA ARRIBA!
+            }
+        }
+    } 
+    // 5. La pelota cayó al vacío
+    else if (ball_y >= 7) {
         estado_actual = DERROTA;
-        // AQUÍ SE ENVIARÁ SEÑAL AL PIC DE "SONIDO DERROTA"
+    }
+}
+void mostrar_mensaje_deslizante() {
+    for (uint16_t desplazamiento = 0; desplazamiento <= LONGITUD_MSG - 8; desplazamiento++) {
+        for (uint8_t i = 0; i < 8; i++) {
+            buffer_pantalla[i] = MSG_DERROTA[desplazamiento + i];
+        }
+        
+        for (uint16_t tiempo = 0; tiempo < 20; tiempo++) { 
+            renderizar_un_frame(); 
+            if (PINC & (1 << PC1)) return; 
+        }
     }
 }
 
 int main(void) {
-    // Configurar Entradas para Botones
-    DDRD &= ~((1 << PD2) | (1 << PD3) | (1 << PD4)); 
-    PORTD |= (1 << PD2) | (1 << PD3) | (1 << PD4); // Pull-ups activados
+    inicializar_hardware();
+    mostrar_simbolo(SIMBOLO_PLAY);
 
-    MAX7219_init();
+    uint16_t tick_pelota = 0;
 
     while (1) {
+        renderizar_un_frame();
+
         if (estado_actual == INICIO) {
-            // Mostrar estático o scroll "INICIAR"
-            // Por simplicidad para el loop, esperamos botón PD2 (START)
-            if (!(PIND & (1 << PD2))) {
+            if (PINC & (1 << PC1)) {
                 configurar_nivel(NIVEL_1);
             }
         } 
         else if (estado_actual >= NIVEL_1 && estado_actual <= NIVEL_3) {
+            tick_pelota++;
+
             leer_botones();
-            actualizar_pelota();
-            actualizar_matriz();
-            delay_variable(velocidad); 
-        } 
-        else if (estado_actual == VICTORIA) {
-            // Aquí iría el texto scroll "FELICIDADES"
-            // Y esperar el botón de START para reiniciar
-            if (!(PIND & (1 << PD2))) {
-                estado_actual = INICIO;
+            actualizar_pantalla_juego();
+
+            if (tick_pelota >= limite_pelota) {
+                actualizar_pelota();
+                actualizar_pantalla_juego();
+                tick_pelota = 0;
             }
         } 
-        else if (estado_actual == DERROTA) {
-            // Aquí iría el texto scroll "PERDISTE"
-            // Y esperar el botón de START para reiniciar
-            if (!(PIND & (1 << PD2))) {
+        else if (estado_actual == VICTORIA) {
+            mostrar_simbolo(SIMBOLO_COPA);
+            if (PINC & (1 << PC1)) { 
                 estado_actual = INICIO;
+                mostrar_simbolo(SIMBOLO_PLAY);
+                for(uint16_t i = 0; i < 150; i++) renderizar_un_frame(); 
+            }
+        }
+        else if (estado_actual == DERROTA) {
+            mostrar_simbolo(SIMBOLO_X);
+            for(uint16_t i = 0; i < 200; i++) renderizar_un_frame(); 
+            
+            while (estado_actual == DERROTA) {
+                mostrar_mensaje_deslizante();
+                
+                if (PINC & (1 << PC1)) {
+                    estado_actual = INICIO;
+                    mostrar_simbolo(SIMBOLO_PLAY);
+                    for(uint16_t i = 0; i < 150; i++) renderizar_un_frame(); 
+                }
             }
         }
     }
