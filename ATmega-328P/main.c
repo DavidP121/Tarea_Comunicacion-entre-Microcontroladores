@@ -12,7 +12,7 @@
 #define DERROTA 5
 
 volatile uint8_t buffer_pantalla[8] = {0};
-bool juego_en_pausa = true; // La pelota no se mueve al iniciar
+bool juego_en_pausa = true; // La pelota se queda quita para inicar el juego
 // Variables Globales del Juego
 uint8_t estado_actual = INICIO;
 uint8_t ball_x = 3, ball_y = 4; // La pelota ahora empieza más abajo
@@ -20,7 +20,7 @@ int8_t dir_x = 1, dir_y = -1;
 uint8_t paddle_x = 2; 
 uint8_t paddle_width = 3; 
 
-// --- NUEVAS VARIABLES PARA LOS BLOQUES ---
+//VARIABLES PARA LOS BLOQUES 
 uint8_t bloques[3] = {0, 0, 0}; // Representan las filas 0, 1 y 2 de la matriz
 uint8_t bloques_restantes = 0;  // Contador para saber cuándo pasar de nivel
 
@@ -92,7 +92,7 @@ void renderizar_un_frame() {
 void actualizar_pantalla_juego() {
     limpiar_matriz();
     
-    // 1. Dibujar los bloques de las 3 primeras filas
+    // A continuación dibujamos los bloques de las 3 primeras filas
     for (uint8_t y = 0; y < 3; y++) {
         for (uint8_t x = 0; x < 8; x++) {
             if (bloques[y] & (1 << x)) { // Si el bit está en 1, el bloque existe
