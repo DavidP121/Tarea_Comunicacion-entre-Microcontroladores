@@ -1,0 +1,11 @@
+0	1	mikroCPIC1618.exe -MSF -DBG -pP16F887 -O11111114 -fo8 -N"C:\Users\Gabriel Salas\Documents\Proyectos Code\sistemb\Tarea_Comunicacion-entre-Microcontroladores\PIC16887\sonidoscode.mcppi" -SP"C:\Users\Public\Documents\Mikroelektronika\mikroC PRO for PIC\Defs\" -SP"C:\Users\Public\Documents\Mikroelektronika\mikroC PRO for PIC\Uses\P16\" -SP"C:\Users\Gabriel Salas\Documents\Proyectos Code\sistemb\Tarea_Comunicacion-entre-Microcontroladores\PIC16887\" -IP"C:\Users\Public\Documents\Mikroelektronika\mikroC PRO for PIC\Uses\P16\" "sonidoscode.c" "__Lib_Math.mcl" "__Lib_MathDouble.mcl" "__Lib_System.mcl" "__Lib_Delays.mcl" "__Lib_CType.mcl" "__Lib_CStdlib.mcl" "__Lib_Button.mcl" "__Lib_Sound.mcl"	 
+hint: 0	1139	Available RAM: 352 [bytes], Available ROM: 8192 [bytes]	 
+diagnostics: 0	122	Compilation Started	sonidoscode.c
+diagnostics: 47	123	Compiled Successfully	sonidoscode.c
+diagnostics: 0	127	All files Compiled in 62 ms	 
+hint: 0	1144	Used RAM (bytes): 21 (6%)  Free RAM (bytes): 331 (94%)	Used RAM (bytes): 21 (6%)  Free RAM (bytes): 331 (94%)
+hint: 0	1144	Used ROM (program words): 953 (12%)  Free ROM (program words): 7239 (88%)	Used ROM (program words): 953 (12%)  Free ROM (program words): 7239 (88%)
+diagnostics: 0	125	Project Linked Successfully	sonidoscode.mcppi
+diagnostics: 0	128	Linked in 32 ms	 
+diagnostics: 0	129	Project 'sonidoscode.mcppi' completed: 250 ms	 
+diagnostics: 0	103	Finished successfully: 10 jun 2026, 07:35:54	sonidoscode.mcppi
